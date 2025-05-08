@@ -2,7 +2,8 @@
 #include <iostream>
 #include <string>
 #include <cstdint>
-
+#include <algorithm>
+#include <fstream>
 //Función para escribir al binario de un bitmap
 //Como funciona?: Se escriber headers a un binario para hacer que sea un archivo bmp compatible
 //hay 54 bytes en el header de un bitmap, entonces usamos uint8_t[] (unsigned integer 8bit type)
@@ -27,7 +28,7 @@
 //|Byte 18-21 : Ancho de la imagen en PX
 //|Byte 22-25 : Alto de la imagen en PX
 //|Byte 26-27 : Número de planos (Arcaico, siempre 1)
-//|Byte 28-29 : Bits por pixel, 24 bits (4 bytes) es el estándar que usamos nosotros todo lo demas es edge case
+//|Byte 28-29 : Bits por pixel, 24 bits (3 bytes) es el estándar que usamos nosotros todo lo demas es edge case
 //|Byte 30-33 : Compresión, casi siempre 0, no se suele usar compresión en Bitmaps
 //|Byte 34-37 : Tamaño de la imagen en bytes, !!! BMP requiere que el número de bytes por fila sea múltiplo de 4 (mas adelante) !!!
 //|Byte 38-41 : Ignorable, 0 (Resolución / Metros se usa para impresión)
@@ -45,12 +46,12 @@ int write_image() {
     //Hago variables los elementos de la imagen como la resolución para poder cambiarlo mas adelante
     //, por ahora dejo las variables en const
 
-    const int resX = 2;
-    const int resY = 5;
+    const int resX = 500;
+    const int resY = 500;
 
     //Pongo esto para poder manejar mas adelante edge cases pero podrían usarse directamente
 
-    const int color_depth = 4;
+    const int color_depth = 3;
 
     //!!! Aqui hay un poco un lío, como dije antes BMP requiere que el número de Bytes por fila sea múltiplo de 4 pero no nos inventamos datos,
     //  esto solamente se usa para el Byte 34-37 en donde tienes que dar el tamaño de la imagen con esas condiciones, seguramente si esto estal
@@ -67,9 +68,57 @@ int write_image() {
 
     header[0] = 'B';
     header[1] = 'M';
-    //Rallada historica esto, pero un int siempre ocupa 32 bits y queremos meter ese número en los bytes 2-5 y para hacer eso hay que convertir el int
-    //que son 4 bytes a un byte de 8 bits, me va a reventar la cabeza pero ponerle "& 0xFF" aparentemente lo hace, no voy a pretender que se por que
+    header[2] = file_size & 0xFF;
+    header[3] = (file_size >> 8) & 0xFF;
+    header[4] = (file_size >> 16) & 0xFF;
+    header[5] = (file_size >> 24) & 0xFF;
+    //Uso una función de la libreria algorithm para rellenar del 6-9 pero se puede hacer manualmente nada lo impide
+    std::fill(header + 6, header + 10, 0);
+    //Offset, suele ser 54 bytes
+    header[10] = 54;
+    std::fill(header + 11, header + 14, 0);
 
+    //DIB
+    
+    header[14] = 40;
+    std::fill(header + 15, header + 18, 0);
+    header[18] = resX & 0xFF;
+    header[19] = (resX >> 8) & 0xFF;
+    header[20] = (resX >> 16) & 0xFF;
+    header[21] = (resX >> 24) & 0xFF;
+    header[22] = resY & 0xFF;
+    header[23] = (resY >> 8) & 0xFF;
+    header[24] = (resY >> 16) & 0xFF;
+    header[25] = (resY >> 24) & 0xFF;
+    header[26] = 1;
+    header[27] = 0;
+    header[28] = 24;
+    header[29] = 0;
+    std::fill(header + 30, header + 34, 0);
+    header[34] = image_size & 0xFF;
+    header[35] = (image_size >> 8) & 0xFF;
+    header[36] = (image_size >> 16) & 0xFF;
+    header[37] = (image_size >> 24) & 0xFF;
+    std::fill(header + 38, header + 42, 0);
+    std::fill(header + 42, header + 46, 0);
+    //Relleno esto directamente para los dos
+    std::fill(header + 46, header + 54, 0);
+    //Lo escribimos al archivo
+    std::ofstream archivo("imagen.bmp", std::ios::binary);
+    archivo.write(reinterpret_cast<char*>(header), 54);
+    int padding = (((resX * color_depth) + 3) / 4) * 4 - (resX * color_depth);
+    for (int y = 0; y < resY; ++y) {
+        for (int x = 0; x < resX; ++x) {
+            archivo.put(0);   // B
+            archivo.put(0);   // G
+            archivo.put(255); // R
+        }
+        for (int i = 0; i < padding; ++i)
+            archivo.put(0); // relleno (padding)
+    }
+    archivo.close();
+    std::cout << "file_size: " << file_size << ", image_size: " << image_size << ", padding: " << padding << std::endl;
+    return 0;
 }
 
 
@@ -83,4 +132,5 @@ int main() {
     std::string x;
     x = std::to_string(add (12,6));
     std::cout << x << std::endl;
+    write_image();
 }
