@@ -4,133 +4,151 @@
 #include <cstdint>
 #include <algorithm>
 #include <fstream>
+#include <vector>
+#include <cmath>
+#include <iomanip> // Para std::hex en los errores
+#include "jpg_encode.hpp" 
+
+// --- Funciones de Conversión de Color ---
+// [...] (Sin cambios)
+struct RGB { uint8_t r, g, b; }; struct YCbCr { int y, cb, cr; };
+RGB hsv_to_rgb(double h, double s, double v) { /* ... como antes ... */ 
+    double r_f=0,g_f=0,b_f=0; if(s==0){r_f=g_f=b_f=v;}else{double i=std::floor(h/60.0);double f=(h/60.0)-i;double p=v*(1.0-s);double q=v*(1.0-s*f);double t=v*(1.0-s*(1.0-f));switch(static_cast<int>(i)%6){case 0:r_f=v;g_f=t;b_f=p;break;case 1:r_f=q;g_f=v;b_f=p;break;case 2:r_f=p;g_f=v;b_f=t;break;case 3:r_f=p;g_f=q;b_f=v;break;case 4:r_f=t;g_f=p;b_f=v;break;case 5:r_f=v;g_f=p;b_f=q;break;}}
+    return {(uint8_t)std::round(r_f*255.0),(uint8_t)std::round(g_f*255.0),(uint8_t)std::round(b_f*255.0)};
+}
+YCbCr rgb_to_ycbcr(RGB color) { /* ... como antes ... */ 
+    double y_f=0.299*color.r+0.587*color.g+0.114*color.b; double cb_f=-0.168736*color.r-0.331264*color.g+0.5*color.b+128.0; double cr_f=0.5*color.r-0.418688*color.g-0.081312*color.b+128.0;
+    return {(int)std::round(std::max(0.0,std::min(255.0,y_f))),(int)std::round(std::max(0.0,std::min(255.0,cb_f))),(int)std::round(std::max(0.0,std::min(255.0,cr_f)))};
+}
+
 //Función para escribir al binario de un bitmap
-//Como funciona?: Se escriber headers a un binario para hacer que sea un archivo bmp compatible
-//hay 54 bytes en el header de un bitmap, entonces usamos uint8_t[] (unsigned integer 8bit type)
-//y lo que hay en los corchetes es la cantidad de esos bytes que quieres asignar a la variable
-//el número que pongas dentro de los corchetes es el número de bytes que quieres que se alloquen
-//en la ram para guardar tus valores y todo lo que quieras.
-//Hay dos tipos de haders que necesitamos poner en un bmp para que sea válido, el esencial es el
-// file header, son 14 bytes y siguen la siguiente estructura:
-//*-------------------------------------------------------------------------------*
-//|Byte 0-1 : "B" "M" Firma BMP
-//|Byte 2-5 : Número de bytes que ocupa el archivo
-//|Byte 6-9 : Reservado, siempre es 0
-//|Byte 10-13 : Offset en donde empieza el RGB de la imagen, siempre es 54 si la 
-//|             imagen tiene colores de 24 bits y no tiene compresión que es en nuestro caso,
-//|             igualmente la compresion en BMP esta en casi total deshuso
-//*-------------------------------------------------------------------------------*
-//Ahora vienen los Headers DIB , estos en vez de describir el archivo describen las características
-//de la imagen en si, como la altura... hay edge cases con software antiguo como con Windows NT4 en donde son
-//completamente distintos pero el que usamos hoy en día es el de Windows 3.0.
-//*-------------------------------------------------------------------------------*
-//|Byte 14-17 : Tamaño en bytes de lo que ocupa el header de DIB
-//|Byte 18-21 : Ancho de la imagen en PX
-//|Byte 22-25 : Alto de la imagen en PX
-//|Byte 26-27 : Número de planos (Arcaico, siempre 1)
-//|Byte 28-29 : Bits por pixel, 24 bits (3 bytes) es el estándar que usamos nosotros todo lo demas es edge case
-//|Byte 30-33 : Compresión, casi siempre 0, no se suele usar compresión en Bitmaps
-//|Byte 34-37 : Tamaño de la imagen en bytes, !!! BMP requiere que el número de bytes por fila sea múltiplo de 4 (mas adelante) !!!
-//|Byte 38-41 : Ignorable, 0 (Resolución / Metros se usa para impresión)
-//|Byte 42-45 : Ignorable, 0 (Resolución / Metros se usa para impresión)
-//|Byte 46-49 : Colores en paleta, 0 para lossless
-//|Byte 50-53 : Colores importantes, 0 para lossless
-//*------------------------------------------------------------------------------*
-//Procedo a declarar todos los headers para hacer una imagen de 2x2 px
-//Declaro un array de 8 bits por elemento con 54 elementos para todos los headers
+// [...] (Sin cambios)
+int write_bmp() { /* ... como antes ... */ 
+    uint8_t h[54]; int X=500; int Y=500; const int d=3; const int sz=(((X*d)+3)/4)*4*Y; const int fsz=54+sz;
+    h[0]='B';h[1]='M';h[2]=fsz&0xFF;h[3]=(fsz>>8)&0xFF;h[4]=(fsz>>16)&0xFF;h[5]=(fsz>>24)&0xFF;std::fill(h+6,h+10,0);h[10]=54;std::fill(h+11,h+14,0);h[14]=40;std::fill(h+15,h+18,0);
+    h[18]=X&0xFF;h[19]=(X>>8)&0xFF;h[20]=(X>>16)&0xFF;h[21]=(X>>24)&0xFF;h[22]=Y&0xFF;h[23]=(Y>>8)&0xFF;h[24]=(Y>>16)&0xFF;h[25]=(Y>>24)&0xFF;
+    h[26]=1;h[27]=0;h[28]=24;h[29]=0;std::fill(h+30,h+34,0);h[34]=sz&0xFF;h[35]=(sz>>8)&0xFF;h[36]=(sz>>16)&0xFF;h[37]=(sz>>24)&0xFF;std::fill(h+38,h+54,0);
+    std::ofstream a("imagen.bmp",std::ios::binary);a.write(reinterpret_cast<char*>(h),54);int p=(((X*d)+3)/4)*4-(X*d);
+    for(int y=0;y<Y;++y){for(int x=0;x<X;++x){double hu=(double(x)/(X-1.0))*360.0;double s=1.0;double v=1.0-(double(y)/(Y-1.0));RGB px=hsv_to_rgb(hu,s,v);a.put(px.b);a.put(px.g);a.put(px.r);}for(int i=0;i<p;++i)a.put(0);}
+    a.close(); std::cout<<"BMP Creado."<<std::endl; return 0;
+}
 
-int write_image() {
 
-    uint8_t header[54];
-
-    //Hago variables los elementos de la imagen como la resolución para poder cambiarlo mas adelante
-    //, por ahora dejo las variables en const
-
+//Vale, ya podemos hacer imágenes pero de un cuadrado rojo, vamos al menos a hacer un conversor de imágenes, asi que para hacer un converor de imágenes
+//de jpg a bmp y viceversa
+//En primer caso voy a definir la función para comprimir imágenes de jpg, es bastante complejo no merece la pena aprenderlo simplemente copy paste
+int write_jpg() {
     const int resX = 500;
     const int resY = 500;
 
-    //Pongo esto para poder manejar mas adelante edge cases pero podrían usarse directamente
+    std::vector<uint8_t> jpeg_data;
+    auto append_bytes = [&](const uint8_t* data, size_t size) {
+        jpeg_data.insert(jpeg_data.end(), data, data + size);
+    };
+    auto append_byte = [&](uint8_t byte) {
+        jpeg_data.push_back(byte);
+    };
 
-    const int color_depth = 3;
+    append_byte(0xFF); append_byte(0xD8); // SOI
 
-    //!!! Aqui hay un poco un lío, como dije antes BMP requiere que el número de Bytes por fila sea múltiplo de 4 pero no nos inventamos datos,
-    //  esto solamente se usa para el Byte 34-37 en donde tienes que dar el tamaño de la imagen con esas condiciones, seguramente si esto estal
-    //  mal calculado no pase absolutamente nada en la mayoría de los visores de imágenes pero mas vale prevenir que curar, matemáticamente para
-    //  redondear a un múltiplo de 4 es X = ((n + 3) / 4) x 4!!!
+    const uint8_t app0_data[] = { /* ... */ 
+        0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00 };
+    append_bytes(app0_data, sizeof(app0_data));
 
-    const int image_size = ((((resX * color_depth) + 3) / 4) * 4) * resY;
+    uint8_t dqt_luma_values[] = { /* DC=1 */
+        0x01, 0x0B, 0x0C, 0x0E, 0x0C, 0x0A, 0x10, 0x0E, 0x0D, 0x0E, 0x13, 0x12, 0x10, 0x14, 0x1C, 0x30, 0x1E, 0x1C, 0x18, 0x18, 0x1C, 0x39, 0x2A, 0x2C, 0x21, 0x30, 0x45, 0x3D, 0x48, 0x47, 0x44, 0x3D, 0x43, 0x41, 0x4D, 0x59, 0x74, 0x5E, 0x4D, 0x52, 0x6E, 0x53, 0x41, 0x43, 0x64, 0x8C, 0x65, 0x6E, 0x78, 0x7A, 0x83, 0x84, 0x83, 0x49, 0x5F, 0x91, 0x9D, 0x90, 0x7D, 0x9B, 0x73, 0x7F, 0x83, 0x7C };
+    uint8_t dqt_chroma_values[] = { /* DC=1 */
+        0x01, 0x12, 0x12, 0x18, 0x15, 0x18, 0x2F, 0x1A, 0x1A, 0x2F, 0x63, 0x41, 0x41, 0x63, 0x6B, 0x6B, 0x6B, 0x6B, 0x6B, 0x6B, 0x6B, 0x6B, 0x6B, 0x6B, 0x6B, 0x6B, 0x6B, 0x6B, 0x6B, 0x6B, 0x6B, 0x6B, 0x6B, 0x6B, 0x6B, 0x6B, 0x6B, 0x6B, 0x6B, 0x6B, 0x6B, 0x6B, 0x6B, 0x6B, 0x6B, 0x6B, 0x6B, 0x6B, 0x6B, 0x6B, 0x6B, 0x6B, 0x6B, 0x6B, 0x6B, 0x6B, 0x6B, 0x6B, 0x6B, 0x6B, 0x6B, 0x6B, 0x6B, 0x6B };
+    uint16_t dqt_len = 2+(1+sizeof(dqt_luma_values))+(1+sizeof(dqt_chroma_values)); append_byte(0xFF); append_byte(0xDB); append_byte((dqt_len>>8)&0xFF); append_byte(dqt_len&0xFF); append_byte(0x00); append_bytes(dqt_luma_values, sizeof(dqt_luma_values)); append_byte(0x01); append_bytes(dqt_chroma_values, sizeof(dqt_chroma_values));
 
-    //Tamaño total del archivo, atención que aquí se sigue haciendo el redondeo de antes, uso headers + tamaño de la imagen que es mas rápido
-
-    const int file_size = 54 + image_size;
-
-    //Ahora escribimos todos estos datos que hemos calculado al header que vamos a escribir al archivo, los header que son siempre igual los pongo directamente
-
-    header[0] = 'B';
-    header[1] = 'M';
-    header[2] = file_size & 0xFF;
-    header[3] = (file_size >> 8) & 0xFF;
-    header[4] = (file_size >> 16) & 0xFF;
-    header[5] = (file_size >> 24) & 0xFF;
-    //Uso una función de la libreria algorithm para rellenar del 6-9 pero se puede hacer manualmente nada lo impide
-    std::fill(header + 6, header + 10, 0);
-    //Offset, suele ser 54 bytes
-    header[10] = 54;
-    std::fill(header + 11, header + 14, 0);
-
-    //DIB
+    uint16_t sof0_len = 8+3*3; append_byte(0xFF); append_byte(0xC0); append_byte((sof0_len>>8)&0xFF); append_byte(sof0_len&0xFF); append_byte(0x08); append_byte((resY>>8)&0xFF); append_byte(resY&0xFF); append_byte((resX>>8)&0xFF); append_byte(resX&0xFF); append_byte(0x03); append_byte(0x01); append_byte(0x11); append_byte(0x00); append_byte(0x02); append_byte(0x11); append_byte(0x01); append_byte(0x03); append_byte(0x11); append_byte(0x01); 
     
-    header[14] = 40;
-    std::fill(header + 15, header + 18, 0);
-    header[18] = resX & 0xFF;
-    header[19] = (resX >> 8) & 0xFF;
-    header[20] = (resX >> 16) & 0xFF;
-    header[21] = (resX >> 24) & 0xFF;
-    header[22] = resY & 0xFF;
-    header[23] = (resY >> 8) & 0xFF;
-    header[24] = (resY >> 16) & 0xFF;
-    header[25] = (resY >> 24) & 0xFF;
-    header[26] = 1;
-    header[27] = 0;
-    header[28] = 24;
-    header[29] = 0;
-    std::fill(header + 30, header + 34, 0);
-    header[34] = image_size & 0xFF;
-    header[35] = (image_size >> 8) & 0xFF;
-    header[36] = (image_size >> 16) & 0xFF;
-    header[37] = (image_size >> 24) & 0xFF;
-    std::fill(header + 38, header + 42, 0);
-    std::fill(header + 42, header + 46, 0);
-    //Relleno esto directamente para los dos
-    std::fill(header + 46, header + 54, 0);
-    //Lo escribimos al archivo
-    std::ofstream archivo("imagen.bmp", std::ios::binary);
-    archivo.write(reinterpret_cast<char*>(header), 54);
-    int padding = (((resX * color_depth) + 3) / 4) * 4 - (resX * color_depth);
-    for (int y = 0; y < resY; ++y) {
-        for (int x = 0; x < resX; ++x) {
-            archivo.put(0);   // B
-            archivo.put(0);   // G
-            archivo.put(255); // R
-        }
-        for (int i = 0; i < padding; ++i)
-            archivo.put(0); // relleno (padding)
+    // Definiciones de Tablas Huffman (necesarias para inicializar mapas)
+    const uint8_t bits_dc_lum[]={0x00,0x01,0x05,0x01,0x01,0x01,0x01,0x01,0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00}; const uint8_t val_dc_lum[]={0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0A,0x0B};
+    const uint8_t bits_ac_lum[]={0x00,0x02,0x01,0x03,0x03,0x02,0x04,0x03,0x05,0x05,0x04,0x04,0x00,0x00,0x01,0x7D}; const uint8_t val_ac_lum[]={0x01,0x02,0x03,0x00,0x04,0x11,0x05,0x12,0x21,0x31,0x41,0x06,0x13,0x51,0x61,0x07,0x22,0x71,0x14,0x32,0x81,0x91,0xA1,0x08,0x23,0x42,0xB1,0xC1,0x15,0x52,0xD1,0xF0,0x24,0x33,0x62,0x72,0x82,0x09,0x0A,0x16,0x17,0x18,0x19,0x1A,0x25,0x26,0x27,0x28,0x29,0x2A,0x34,0x35,0x36,0x37,0x38,0x39,0x3A,0x43,0x44,0x45,0x46,0x47,0x48,0x49,0x4A,0x53,0x54,0x55,0x56,0x57,0x58,0x59,0x5A,0x63,0x64,0x65,0x66,0x67,0x68,0x69,0x6A,0x73,0x74,0x75,0x76,0x77,0x78,0x79,0x7A,0x83,0x84,0x85,0x86,0x87,0x88,0x89,0x8A,0x92,0x93,0x94,0x95,0x96,0x97,0x98,0x99,0x9A,0xA2,0xA3,0xA4,0xA5,0xA6,0xA7,0xA8,0xA9,0xAA,0xB2,0xB3,0xB4,0xB5,0xB6,0xB7,0xB8,0xB9,0xBA,0xC2,0xC3,0xC4,0xC5,0xC6,0xC7,0xC8,0xC9,0xCA,0xD2,0xD3,0xD4,0xD5,0xD6,0xD7,0xD8,0xD9,0xDA,0xE1,0xE2,0xE3,0xE4,0xE5,0xE6,0xE7,0xE8,0xE9,0xEA,0xF1,0xF2,0xF3,0xF4,0xF5,0xF6,0xF7,0xF8,0xF9,0xFA};
+    const uint8_t bits_dc_chrom[]={0x00,0x03,0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x00,0x00,0x00,0x00,0x00}; const uint8_t val_dc_chrom[]={0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0A,0x0B};
+    const uint8_t bits_ac_chrom[]={0x00,0x02,0x01,0x02,0x04,0x04,0x03,0x04,0x07,0x05,0x04,0x04,0x00,0x01,0x02,0x77}; const uint8_t val_ac_chrom[]={0x00,0x01,0x02,0x03,0x11,0x04,0x05,0x21,0x31,0x06,0x12,0x41,0x51,0x07,0x61,0x71,0x13,0x22,0x32,0x81,0x08,0x14,0x42,0x91,0xA1,0xB1,0xC1,0x09,0x23,0x33,0x52,0xF0,0x15,0x62,0x72,0xD1,0x0A,0x16,0x24,0x34,0xE1,0x25,0xF1,0x17,0x18,0x19,0x1A,0x26,0x27,0x28,0x29,0x2A,0x35,0x36,0x37,0x38,0x39,0x3A,0x43,0x44,0x45,0x46,0x47,0x48,0x49,0x4A,0x53,0x54,0x55,0x56,0x57,0x58,0x59,0x5A,0x63,0x64,0x65,0x66,0x67,0x68,0x69,0x6A,0x73,0x74,0x75,0x76,0x77,0x78,0x79,0x7A,0x82,0x83,0x84,0x85,0x86,0x87,0x88,0x89,0x8A,0x92,0x93,0x94,0x95,0x96,0x97,0x98,0x99,0x9A,0xA2,0xA3,0xA4,0xA5,0xA6,0xA7,0xA8,0xA9,0xAA,0xB2,0xB3,0xB4,0xB5,0xB6,0xB7,0xB8,0xB9,0xBA,0xC2,0xC3,0xC4,0xC5,0xC6,0xC7,0xC8,0xC9,0xCA,0xD2,0xD3,0xD4,0xD5,0xD6,0xD7,0xD8,0xD9,0xDA,0xE2,0xE3,0xE4,0xE5,0xE6,0xE7,0xE8,0xE9,0xEA,0xF2,0xF3,0xF4,0xF5,0xF6,0xF7,0xF8,0xF9,0xFA};
+
+    // Escribir segmento DHT
+    uint16_t dht_segment_len=2; dht_segment_len+=(1+16+sizeof(val_dc_lum)); dht_segment_len+=(1+16+sizeof(val_ac_lum)); dht_segment_len+=(1+16+sizeof(val_dc_chrom)); dht_segment_len+=(1+16+sizeof(val_ac_chrom)); 
+    append_byte(0xFF); append_byte(0xC4); append_byte((dht_segment_len>>8)&0xFF); append_byte(dht_segment_len&0xFF);
+    append_byte(0x00); append_bytes(bits_dc_lum, 16); append_bytes(val_dc_lum, sizeof(val_dc_lum));
+    append_byte(0x10); append_bytes(bits_ac_lum, 16); append_bytes(val_ac_lum, sizeof(val_ac_lum));
+    append_byte(0x01); append_bytes(bits_dc_chrom, 16); append_bytes(val_dc_chrom, sizeof(val_dc_chrom));
+    append_byte(0x11); append_bytes(bits_ac_chrom, 16); append_bytes(val_ac_chrom, sizeof(val_ac_chrom));
+    
+    // *** NUEVO: Inicializar mapas Huffman AC aquí ***
+    if (!JpegEncoder::huffAcMapsInitialized) { // Solo inicializar una vez
+         JpegEncoder::buildHuffmanACTables(bits_ac_lum, val_ac_lum, sizeof(val_ac_lum), JpegEncoder::huff_ac_lum_map);
+         JpegEncoder::buildHuffmanACTables(bits_ac_chrom, val_ac_chrom, sizeof(val_ac_chrom), JpegEncoder::huff_ac_chrom_map);
+         JpegEncoder::huffAcMapsInitialized = true;
     }
+    
+    // SOS 
+    uint16_t sos_len = 6+2*3; append_byte(0xFF); append_byte(0xDA); append_byte((sos_len>>8)&0xFF); append_byte(sos_len&0xFF); append_byte(0x03); append_byte(0x01); append_byte(0x00); append_byte(0x02); append_byte(0x11); append_byte(0x03); append_byte(0x11); append_byte(0x00); append_byte(0x3F); append_byte(0x00); 
+
+    uint8_t mcu_current_byte = 0;       
+    int mcu_bits_in_current_byte = 0; 
+
+    int num_blocks_x = static_cast<int>(std::ceil(static_cast<double>(resX) / 8.0));
+    int num_blocks_y = static_cast<int>(std::ceil(static_cast<double>(resY) / 8.0));
+    int total_blocks = num_blocks_x * num_blocks_y; 
+    
+    int prev_dc_quant_Y  = 0; 
+    int prev_dc_quant_Cb = 0; 
+    int prev_dc_quant_Cr = 0; 
+
+    std::vector<double> block_Y(64); std::vector<double> block_Cb(64); std::vector<double> block_Cr(64);
+
+    for (int y_mcu = 0; y_mcu < num_blocks_y; ++y_mcu) {
+        for (int x_mcu = 0; x_mcu < num_blocks_x; ++x_mcu) {
+            
+            for (int y_in_block = 0; y_in_block < 8; ++y_in_block) {
+                for (int x_in_block = 0; x_in_block < 8; ++x_in_block) {
+                    int x_global = x_mcu * 8 + x_in_block; int y_global = y_mcu * 8 + y_in_block;
+                    if (x_global >= resX || y_global >= resY) { x_global = x_mcu * 8; y_global = y_mcu * 8; } // Relleno simple
+                    double hue=(double(x_global)/(resX-1.0))*360.0; double sat=1.0; double val=1.0-(double(y_global)/(resY-1.0));
+                    RGB rgb_px = hsv_to_rgb(hue, sat, val); YCbCr ycbcr_px = rgb_to_ycbcr(rgb_px);
+                    int idx = y_in_block * 8 + x_in_block;
+                    block_Y[idx] = double(ycbcr_px.y) - 128.0; block_Cb[idx] = double(ycbcr_px.cb) - 128.0; block_Cr[idx] = double(ycbcr_px.cr) - 128.0;
+                }
+            }
+
+            // Llamar a la función de codificación de bloque (ahora con menos parámetros)
+            JpegEncoder::encode_jpeg_block(block_Y, dqt_luma_values, prev_dc_quant_Y, true, 
+                                           jpeg_data, mcu_current_byte, mcu_bits_in_current_byte);
+            JpegEncoder::encode_jpeg_block(block_Cb, dqt_chroma_values, prev_dc_quant_Cb, false,
+                                           jpeg_data, mcu_current_byte, mcu_bits_in_current_byte);
+            JpegEncoder::encode_jpeg_block(block_Cr, dqt_chroma_values, prev_dc_quant_Cr, false,
+                                           jpeg_data, mcu_current_byte, mcu_bits_in_current_byte);
+        }
+    }
+    
+    // Padding final
+    if (mcu_bits_in_current_byte > 0) {
+        mcu_current_byte <<= (8 - mcu_bits_in_current_byte); mcu_current_byte |= ((1 << (8 - mcu_bits_in_current_byte)) - 1); 
+        append_byte(mcu_current_byte); if (mcu_current_byte == 0xFF) { append_byte(0x00); }
+    }
+    
+    append_byte(0xFF); append_byte(0xD9); // EOI
+
+    std::ofstream archivo("image.jpg", std::ios::binary);
+    if (!archivo) { std::cerr << "Error al abrir image.jpg para escritura!" << std::endl; return 1; }
+    archivo.write(reinterpret_cast<const char*>(jpeg_data.data()), jpeg_data.size());
     archivo.close();
-    std::cout << "file_size: " << file_size << ", image_size: " << image_size << ", padding: " << padding << std::endl;
+    std::cout << "JPG (Full Encode): file_size: " << jpeg_data.size() << ", total_mcu_blocks: " << total_blocks << std::endl;
     return 0;
 }
 
-
 //Función básica de suma de prueba
-int add(int a, int b) {
-    return a + b;
-}
+int add(int a, int b) { return a + b; }
 
 //Función principal
 int main() {
-    std::string x;
-    x = std::to_string(add (12,6));
-    std::cout << x << std::endl;
-    write_image();
+    std::string x_str = std::to_string(add (12,6));
+    std::cout << "Resultado de la suma: " << x_str << std::endl;
+    // if (write_bmp() != 0) return 1; 
+    if (write_jpg() != 0) return 1;
+    std::cout << "Generación de imagen completada." << std::endl;
+    return 0;
 }
